@@ -17,20 +17,29 @@ const (
 	IdentityReaderRole IdentityRoleDefinition = "[variables('readerRoleDefinitionId')]"
 )
 
-func createMSIRoleAssignment(identityRoleDefinition IdentityRoleDefinition) RoleAssignmentARM {
+func createMSIRoleAssignment(identityRoleDefinition IdentityRoleDefinition, existingIdentityPrincipalID string) RoleAssignmentARM {
+	var principalID *string
+	var dependsOn []string
+	if existingIdentityPrincipalID != "" {
+		principalID = &existingIdentityPrincipalID
+		dependsOn = []string{}
+	} else {
+		principalID = to.StringPtr("[reference(concat('Microsoft.ManagedIdentity/userAssignedIdentities/', variables('userAssignedID'))).principalId]")
+		dependsOn = []string{
+			"[concat('Microsoft.ManagedIdentity/userAssignedIdentities/', variables('userAssignedID'))]",
+		}
+	}
 	return RoleAssignmentARM{
 		ARMResource: ARMResource{
 			APIVersion: "[variables('apiVersionAuthorizationUser')]",
-			DependsOn: []string{
-				"[concat('Microsoft.ManagedIdentity/userAssignedIdentities/', variables('userAssignedID'))]",
-			},
+			DependsOn:  dependsOn,
 		},
 		RoleAssignment: authorization.RoleAssignment{
 			Type: to.StringPtr("Microsoft.Authorization/roleAssignments"),
 			Name: to.StringPtr("[guid(concat(variables('userAssignedID'), 'roleAssignment', resourceGroup().id))]"),
 			RoleAssignmentPropertiesWithScope: &authorization.RoleAssignmentPropertiesWithScope{
 				RoleDefinitionID: to.StringPtr(string(identityRoleDefinition)),
-				PrincipalID:      to.StringPtr("[reference(concat('Microsoft.ManagedIdentity/userAssignedIdentities/', variables('userAssignedID'))).principalId]"),
+				PrincipalID:      principalID,
 				PrincipalType:    authorization.ServicePrincipal,
 				Scope:            to.StringPtr("[resourceGroup().id]"),
 			},

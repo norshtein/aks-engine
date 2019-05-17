@@ -14,31 +14,40 @@ import (
 func GenerateARMResources(cs *api.ContainerService) []interface{} {
 	var armResources []interface{}
 
-	var useManagedIdentity, userAssignedIDEnabled bool
 	kubernetesConfig := cs.Properties.OrchestratorProfile.KubernetesConfig
 
+	var useManagedIdentity, useNewUserAssignedID, useExistingUserAssignedID bool
+	var existingIdentityPrincipalID string
 	if kubernetesConfig != nil {
 		useManagedIdentity = kubernetesConfig.UseManagedIdentity
-		userAssignedIDEnabled = useManagedIdentity && kubernetesConfig.UserAssignedID != ""
+		useExistingUserAssignedID = useManagedIdentity && cs.Properties.OrchestratorProfile != nil && cs.Properties.OrchestratorProfile.KubernetesConfig != nil && cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile != nil
+		useNewUserAssignedID = useManagedIdentity && !useExistingUserAssignedID && kubernetesConfig.UserAssignedID != ""
+	}
+	if useExistingUserAssignedID {
+		existingIdentityPrincipalID = cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile.PrincipalID
 	}
 
 	isHostedMaster := cs.Properties.IsHostedMasterProfile()
-	if userAssignedIDEnabled {
+	if useNewUserAssignedID {
+		// Only create identity definition if it is a new user assigned identity
 		userAssignedID := createUserAssignedIdentities()
+		armResources = append(armResources, userAssignedID)
+	}
+	if useNewUserAssignedID || useExistingUserAssignedID {
 		var msiRoleAssignment RoleAssignmentARM
 		if isHostedMaster {
-			msiRoleAssignment = createMSIRoleAssignment(IdentityReaderRole)
+			msiRoleAssignment = createMSIRoleAssignment(IdentityReaderRole, existingIdentityPrincipalID)
 		} else {
-			msiRoleAssignment = createMSIRoleAssignment(IdentityContributorRole)
+			msiRoleAssignment = createMSIRoleAssignment(IdentityContributorRole, existingIdentityPrincipalID)
 		}
-		armResources = append(armResources, userAssignedID, msiRoleAssignment)
+		armResources = append(armResources, msiRoleAssignment)
 	}
 
 	profiles := cs.Properties.AgentPoolProfiles
 
 	for _, profile := range profiles {
 		if profile.IsVirtualMachineScaleSets() {
-			if useManagedIdentity && !userAssignedIDEnabled {
+			if useManagedIdentity && !(useExistingUserAssignedID || useNewUserAssignedID) {
 				armResources = append(armResources, createAgentVMSSSysRoleAssignment(profile))
 			}
 			armResources = append(armResources, CreateAgentVMSS(cs, profile))
@@ -122,7 +131,7 @@ func createKubernetesAgentVMASResources(cs *api.ContainerService, profile *api.A
 	agentVMASResources = append(agentVMASResources, agentVMASVM)
 
 	useManagedIdentity := cs.Properties.OrchestratorProfile.KubernetesConfig.UseManagedIdentity
-	userAssignedIDEnabled := useManagedIdentity && cs.Properties.OrchestratorProfile.KubernetesConfig.UserAssignedID != ""
+	userAssignedIDEnabled := cs.Properties.OrchestratorProfile.KubernetesConfig.UserAssignedIDEnabled()
 
 	if useManagedIdentity && !userAssignedIDEnabled {
 		agentVMASSysRoleAssignment := createAgentVMASSysRoleAssignment(profile)

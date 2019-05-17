@@ -720,6 +720,7 @@ func convertVLabsKubernetesConfig(vlabs *vlabs.KubernetesConfig, api *Kubernetes
 	convertSchedulerConfigToAPI(vlabs, api)
 	convertPrivateClusterToAPI(vlabs, api)
 	convertPodSecurityPolicyConfigToAPI(vlabs, api)
+	convertExistingUserAssignedIdentityProfileToAPI(vlabs, api)
 }
 
 func setVlabsKubernetesDefaults(vp *vlabs.Properties, api *OrchestratorProfile) {
@@ -840,6 +841,15 @@ func convertPrivateClusterToAPI(v *vlabs.KubernetesConfig, a *KubernetesConfig) 
 			a.PrivateCluster.JumpboxProfile = &PrivateJumpboxProfile{}
 			convertPrivateJumpboxProfileToAPI(v.PrivateCluster.JumpboxProfile, a.PrivateCluster.JumpboxProfile)
 		}
+	}
+}
+
+func convertExistingUserAssignedIdentityProfileToAPI(v *vlabs.KubernetesConfig, a *KubernetesConfig) {
+	if v.ExistingUserAssignedIdentityProfile != nil {
+		a.ExistingUserAssignedIdentityProfile = &ExistingUserAssignedIdentityProfile{}
+		a.ExistingUserAssignedIdentityProfile.ResourceID = v.ExistingUserAssignedIdentityProfile.ResourceID
+		a.ExistingUserAssignedIdentityProfile.ClientID = v.ExistingUserAssignedIdentityProfile.ClientID
+		a.ExistingUserAssignedIdentityProfile.PrincipalID = v.ExistingUserAssignedIdentityProfile.PrincipalID
 	}
 }
 

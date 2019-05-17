@@ -19,10 +19,15 @@ func CreateMasterVM(cs *api.ContainerService) VirtualMachineARM {
 	isStorageAccount := cs.Properties.MasterProfile.IsStorageAccount()
 	kubernetesConfig := cs.Properties.OrchestratorProfile.KubernetesConfig
 
-	var useManagedIdentity, userAssignedIDEnabled bool
+	var useManagedIdentity, useNewUserAssignedID, useExistingUserAssignedID bool
+	var existingIdentityResourceID string
 	if kubernetesConfig != nil {
 		useManagedIdentity = kubernetesConfig.UseManagedIdentity
-		userAssignedIDEnabled = useManagedIdentity && kubernetesConfig.UserAssignedID != ""
+		useExistingUserAssignedID = useManagedIdentity && cs.Properties.OrchestratorProfile != nil && cs.Properties.OrchestratorProfile.KubernetesConfig != nil && cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile != nil
+		useNewUserAssignedID = useManagedIdentity && !useExistingUserAssignedID && kubernetesConfig.UserAssignedID != ""
+	}
+	if useExistingUserAssignedID {
+		existingIdentityResourceID = cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile.ResourceID
 	}
 
 	var dependencies []string
@@ -67,7 +72,12 @@ func CreateMasterVM(cs *api.ContainerService) VirtualMachineARM {
 
 	if useManagedIdentity {
 		identity := &compute.VirtualMachineIdentity{}
-		if userAssignedIDEnabled {
+		if useExistingUserAssignedID {
+			identity.Type = compute.ResourceIdentityTypeUserAssigned
+			identity.UserAssignedIdentities = map[string]*compute.VirtualMachineIdentityUserAssignedIdentitiesValue{
+				existingIdentityResourceID: {},
+			}
+		} else if useNewUserAssignedID {
 			identity.Type = compute.ResourceIdentityTypeUserAssigned
 			identity.UserAssignedIdentities = map[string]*compute.VirtualMachineIdentityUserAssignedIdentitiesValue{
 				"[variables('userAssignedIDReference')]": {},
@@ -307,11 +317,15 @@ func createAgentAvailabilitySetVM(cs *api.ContainerService, profile *api.AgentPo
 	hasDisks := profile.HasDisks()
 	kubernetesConfig := cs.Properties.OrchestratorProfile.KubernetesConfig
 
-	var useManagedIdentity, userAssignedIDEnabled bool
-
+	var useManagedIdentity, useNewUserAssignedID, useExistingUserAssignedID bool
+	var existingIdentityResourceID string
 	if kubernetesConfig != nil {
 		useManagedIdentity = kubernetesConfig.UseManagedIdentity
-		userAssignedIDEnabled = useManagedIdentity && kubernetesConfig.UserAssignedID != ""
+		useExistingUserAssignedID = useManagedIdentity && cs.Properties.OrchestratorProfile != nil && cs.Properties.OrchestratorProfile.KubernetesConfig != nil && cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile != nil
+		useNewUserAssignedID = useManagedIdentity && !useExistingUserAssignedID && kubernetesConfig.UserAssignedID != ""
+	}
+	if useExistingUserAssignedID {
+		existingIdentityResourceID = cs.Properties.OrchestratorProfile.KubernetesConfig.ExistingUserAssignedIdentityProfile.ResourceID
 	}
 
 	if isStorageAccount {
@@ -368,7 +382,14 @@ func createAgentAvailabilitySetVM(cs *api.ContainerService, profile *api.AgentPo
 	addCustomTagsToVM(profile.CustomVMTags, &virtualMachine)
 
 	if useManagedIdentity {
-		if userAssignedIDEnabled && !profile.IsWindows() {
+		if useExistingUserAssignedID && !profile.IsWindows() {
+			virtualMachine.Identity = &compute.VirtualMachineIdentity{
+				Type: compute.ResourceIdentityTypeUserAssigned,
+				UserAssignedIdentities: map[string]*compute.VirtualMachineIdentityUserAssignedIdentitiesValue{
+					existingIdentityResourceID: {},
+				},
+			}
+		} else if useNewUserAssignedID && !profile.IsWindows() {
 			virtualMachine.Identity = &compute.VirtualMachineIdentity{
 				Type: compute.ResourceIdentityTypeUserAssigned,
 				UserAssignedIdentities: map[string]*compute.VirtualMachineIdentityUserAssignedIdentitiesValue{
